@@ -12,16 +12,14 @@
 
 #define foreach BOOST_FOREACH
 
-
 int get_earliest (
-    std::vector<std::queue<rosbag::MessageInstance>>& queue_for_merge, bool at_final = false) {
+    std::vector<std::queue<rosbag::MessageInstance>>& queue_for_merge) {
   ros::Time time_earliest;
   time_earliest.fromSec(2000000000);
   int index;
   for (size_t i = 0; i < queue_for_merge.size(); ++i) {
     if (queue_for_merge[i].empty()) {
-      if (at_final) continue;
-      else return -1;
+      continue;
     } else if (queue_for_merge[i].front().getTime().toNSec() < time_earliest.toNSec()) {
       index = i;
       time_earliest = queue_for_merge[i].front().getTime();
@@ -80,16 +78,11 @@ int main (int argc, char* argv[]) {
                     queue_for_merge[index].front());
       queue_for_merge[index].pop();
     } else {
-      int end_index;
-      while (true) {
-        end_index = get_earliest(queue_for_merge, true);
-        if (end_index == -1) break;
-        bag_out.write(queue_for_merge[end_index].front().getTopic(),
-            queue_for_merge[end_index].front().getTime(),
-            queue_for_merge[end_index].front());
-        queue_for_merge[end_index].pop();
-      }
       break;
     }
   }
+  for (size_t i = 0; i < bags_path.size(); ++i) {
+    bags[i].close();
+  }
+  bag_out.close();
 }

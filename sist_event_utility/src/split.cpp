@@ -60,16 +60,16 @@ int main (int argc, char* argv[]) {
   bag_depth_left_event_out.setCompression(rosbag::compression::LZ4);
 
 
-  std::vector<std::string> topics{"/prophesee/camera_left/cd_events_buffer_reconstructed",
-      "/prophesee/camera_right/cd_events_buffer_reconstructed", "/stereo/left/image_mono",
-      "/stereo/right/image_mono", "/os_cloud_node/points", "/imu/data", "/depth/image_raw", "/points2",
-      "/depth_to_rgb/image_raw"};
-  rosbag::View view(bag_in, rosbag::TopicQuery(topics));
+  // std::vector<std::string> topics{"/prophesee/camera_left/cd_events_buffer_reconstructed",
+  //     "/prophesee/camera_right/cd_events_buffer_reconstructed", "/stereo/left/image_mono",
+  //     "/stereo/right/image_mono", "/os_cloud_node/points", "/imu/data", "/depth/image_raw", "/points2",
+  //     "/depth_to_rgb/image_raw"};
+  rosbag::View view(bag_in); //, rosbag::TopicQuery(topics));
 
   ros::Time left_time, right_time;
   left_time.fromNSec(0);
   right_time.fromNSec(0);
-  // int count = 0;
+  int count = 0;
 
   foreach(rosbag::MessageInstance const m, view) {
     if (m.getTopic() == "/prophesee/camera_left/cd_events_buffer_reconstructed") {
@@ -78,9 +78,8 @@ int main (int argc, char* argv[]) {
         if (event.ts.toNSec() >= left_time.toNSec()) left_time = event.ts;
         else {
           event.ts = left_time;
-          // ROS_WARN("!!! INVERSE !!! %d", ++count);
+          ROS_WARN("!!! INVERSE !!! %d", ++count);
         }
-        
       }
       bag_event_left_out.write("/prophesee/left/cd_events_buffer", m.getTime(), *s);
     } else if (m.getTopic() == "/prophesee/camera_right/cd_events_buffer_reconstructed") {
@@ -89,7 +88,7 @@ int main (int argc, char* argv[]) {
         if (event.ts.toNSec() >= right_time.toNSec()) right_time = event.ts;
         else {
           event.ts = right_time;
-          // ROS_WARN("!!! INVERSE !!! %d", ++count);
+          ROS_WARN("!!! INVERSE !!! %d", ++count);
         }
       }
       bag_event_right_out.write("/prophesee/right/cd_events_buffer", m.getTime(), *s);
