@@ -1,0 +1,4 @@
+<launch>
+  <rosparam command="load" file="$(find sist_event_utility)/config/config.yaml" />
+  <node name="time_reconstructor" pkg="sist_event_utility" type="time_reconstruct" output="screen"/>
+</launch>

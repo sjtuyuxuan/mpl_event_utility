@@ -30,6 +30,16 @@ int main (int argc, char* argv[]) {
   bool hand_held = ros::param::get("/kinect_topic", kinect_topic);
   bool wide = ros::param::get("/lidar_topic", lidar_topic);
 
+  std::string out_event_left_topic, out_event_right_topic, out_rgb_left_topic,
+      out_rgb_right_topic, out_imu_topic, out_kinect_topic, out_lidar_topic;
+  ros::param::get("/out_event_left_topic", out_event_left_topic);
+  ros::param::get("/out_event_right_topic", out_event_right_topic);
+  ros::param::get("/out_rgb_left_topic", out_rgb_left_topic);
+  ros::param::get("/out_rgb_right_topic", out_rgb_right_topic);
+  ros::param::get("/out_imu_topic", out_imu_topic);
+  ros::param::get("/kinect_topic", out_kinect_topic);
+  ros::param::get("/lidar_topic", out_lidar_topic);
+
   std::deque<sist_event_utility::EventArray::Ptr> event_left_buffer;
   std::deque<sist_event_utility::EventArray::Ptr> event_right_buffer;
   std::deque<sensor_msgs::Image::Ptr> rgb_left_buffer;
@@ -50,7 +60,8 @@ int main (int argc, char* argv[]) {
   rgb_right_last.fromNSec(0);
   rgb_left_last.fromNSec(0);
   lidar_last.fromNSec(0);
-
+  sensor_msgs::Image::Ptr rgb_right_temp, rgb_left_temp;
+  sensor_msgs::PointCloud2::Ptr lidar_temp;
 
   // read from bag
   foreach(rosbag::MessageInstance const m, view) {
@@ -59,15 +70,27 @@ int main (int argc, char* argv[]) {
     if (m.getTopic() == rgb_left_topic) {
       auto s = m.instantiate<sensor_msgs::Image>();
       if (rgb_left_buffer.empty()) {
-        if (rgb_left_last.toNSec() != 0 && m.getTime().toSec() - rgb_right_last.toSec() < 0.1) rgb_left_buffer.emplace_back(s);
-        else rgb_left_last = m.getTime();
+        if (rgb_left_last.toNSec() != 0 && m.getTime().toSec() - rgb_left_last.toSec() < 0.1) {
+          rgb_left_buffer.emplace_back(rgb_left_temp);
+          rgb_left_buffer.emplace_back(s);
+        } else {
+          rgb_left_last = m.getTime();
+          rgb_left_temp = s;
+          ROS_DEBUG("Left Frame before start");
+        }
       } else rgb_left_buffer.emplace_back(s);
     }
     if (m.getTopic() == rgb_right_topic) {
       auto s = m.instantiate<sensor_msgs::Image>();
       if (rgb_right_buffer.empty()) {
-        if (rgb_right_last.toNSec() != 0 && m.getTime().toSec() - rgb_right_last.toSec() < 0.1) rgb_right_buffer.emplace_back(s);
-        else rgb_right_last = m.getTime();
+        if (rgb_right_last.toNSec() != 0 && m.getTime().toSec() - rgb_right_last.toSec() < 0.1) {
+          rgb_right_buffer.emplace_back(rgb_right_temp);
+          rgb_right_buffer.emplace_back(s);
+        } else {
+          rgb_right_last = m.getTime();
+          rgb_right_temp = s;
+          ROS_DEBUG("Right Frame before start");
+        }
       } else rgb_right_buffer.emplace_back(s);
     }
     if (m.getTopic() == imu_topic) imu_buffer.emplace_back(m.instantiate<sensor_msgs::Imu>());
@@ -78,9 +101,13 @@ int main (int argc, char* argv[]) {
         auto s = m.instantiate<sensor_msgs::PointCloud2>();
         if (lidar_buffer.empty()) {
           if (lidar_last.toNSec() != 0 && s->header.stamp.toSec() - lidar_last.toSec() < 0.2) {
+            lidar_buffer.emplace_back(lidar_temp);
             lidar_buffer.emplace_back(s);
-            lidar_start = s->header.stamp;
-          } else lidar_last = s->header.stamp;
+            lidar_start = lidar_temp->header.stamp;
+          } else {
+            lidar_last = s->header.stamp;
+            lidar_temp = s;
+          }
         } else lidar_buffer.emplace_back(s);
       }
     }
@@ -154,7 +181,7 @@ int main (int argc, char* argv[]) {
         }
         event_left_buffer.front()->header.stamp.fromNSec(
             event_left_buffer.front()->header.stamp.toNSec() + start_time.toNSec());
-        bag_out.write("/prophesee/left/cd_events_buffer",
+        bag_out.write(out_event_left_topic,
             event_left_buffer.front()->header.stamp, event_left_buffer.front());
         event_left_buffer.pop_front();
         if (!event_left_buffer.empty()) {
@@ -175,7 +202,7 @@ int main (int argc, char* argv[]) {
         }
         event_right_buffer.front()->header.stamp.fromNSec(
             event_right_buffer.front()->header.stamp.toNSec() + start_time.toNSec());
-        bag_out.write("/prophesee/right/cd_events_buffer",
+        bag_out.write(out_event_right_topic,
             event_right_buffer.front()->header.stamp, event_right_buffer.front());
         event_right_buffer.pop_front();
         if (!event_right_buffer.empty()) {
@@ -187,7 +214,7 @@ int main (int argc, char* argv[]) {
       case 2:
         if (!rgb_left_buffer.empty()) {
           rgb_left_buffer.front()->header.stamp.fromNSec(time_now[2] + start_time.toNSec());
-          bag_out.write("/stereo/left/image_mono",
+          bag_out.write(out_rgb_left_topic,
               rgb_left_buffer.front()->header.stamp, rgb_left_buffer.front());
           time_now[2] += 33333333;
           rgb_left_buffer.pop_front();
@@ -198,7 +225,7 @@ int main (int argc, char* argv[]) {
       case 3:
         if (!rgb_right_buffer.empty()) {
           rgb_right_buffer.front()->header.stamp.fromNSec(time_now[3] + start_time.toNSec());
-          bag_out.write("/stereo/right/image_mono",
+          bag_out.write(out_rgb_right_topic,
               rgb_right_buffer.front()->header.stamp, rgb_right_buffer.front());
           time_now[3] += 33333333;
           rgb_right_buffer.pop_front();
@@ -209,8 +236,7 @@ int main (int argc, char* argv[]) {
       case 4:
         if (!imu_buffer.empty()) {
           imu_buffer.front()->header.stamp.fromNSec(time_now[4] + start_time.toNSec());
-          bag_out.write("/imu/data",
-              imu_buffer.front()->header.stamp, imu_buffer.front());
+          bag_out.write(out_imu_topic, imu_buffer.front()->header.stamp, imu_buffer.front());
           time_now[4] += 5000000;
           imu_buffer.pop_front();
         } else {
@@ -222,7 +248,7 @@ int main (int argc, char* argv[]) {
           time_now[5] = kinect_buffer_processed.front()->header.stamp.toNSec() + 33333333;
           kinect_buffer_processed.front()->header.stamp.fromNSec(
               kinect_buffer_processed.front()->header.stamp.toNSec() + start_time.toNSec());
-          bag_out.write("/kinect/depth_image",
+          bag_out.write(out_kinect_topic,
               kinect_buffer_processed.front()->header.stamp, kinect_buffer_processed.front());
           kinect_buffer_processed.pop_front();
         } else {
@@ -233,7 +259,7 @@ int main (int argc, char* argv[]) {
         if (!lidar_buffer.empty()) {
           lidar_buffer.front()->header.stamp.fromNSec(
               lidar_buffer.front()->header.stamp.toNSec() - lidar_start.toNSec() + start_time.toNSec());
-          bag_out.write("/os_cloud_node/points",
+          bag_out.write(out_lidar_topic,
               lidar_buffer.front()->header.stamp, lidar_buffer.front());
           time_now[6] = lidar_buffer.front()->header.stamp.toNSec() - start_time.toNSec() + 100000000;
           lidar_buffer.pop_front();
