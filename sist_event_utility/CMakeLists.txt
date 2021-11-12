@@ -145,6 +145,7 @@ include_directories(
 # add_executable(${PROJECT_NAME}_node src/sist_event_utility_node.cpp)
 add_executable(split_bag src/split.cpp)
 add_executable(merge_bag src/merge.cpp)
+add_executable(time_reconstruct src/timestemp.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -157,6 +158,7 @@ add_executable(merge_bag src/merge.cpp)
 # add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(split_bag ${catkin_LIBRARIES})
 target_link_libraries(merge_bag ${catkin_LIBRARIES})
+target_link_libraries(time_reconstruct ${catkin_LIBRARIES})
 ## Specify libraries to link a library or executable target against
 # target_link_libraries(${PROJECT_NAME}_node
 #   ${catkin_LIBRARIES}

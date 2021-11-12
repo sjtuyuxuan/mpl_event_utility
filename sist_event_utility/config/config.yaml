@@ -1,0 +1,8 @@
+event_left_topic : '/prophesee/camera_left/cd_events_buffer_reconstructed'
+event_right_topic : '/prophesee/camera_right/cd_events_buffer_reconstructed'
+rgb_left_topic : '/stereo/left/image_mono'
+rgb_right_topic : '/stereo/right/image_mono'
+imu_topic : '/imu/data'
+kinect_topic : '/depth/image_raw'
+rawbag_path : '/home/yuxuan/Downloads/slow1.bag'
+output_path : '/home/yuxuan/Downloads/s.bag'
