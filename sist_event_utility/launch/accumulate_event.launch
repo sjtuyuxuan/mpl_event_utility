@@ -1,0 +1,20 @@
+<launch>
+  <!-- Time surfaces generation -->
+  <param name="topic_out_left" value="/accumulated_events/image_left" />
+  <param name="topic_out_right" value="/accumulated_events/image_right" />
+  <param name="topic_ev_left" value="/prophesee/left/cd_events_buffer" />    
+  <param name="topic_ev_right" value="/prophesee/right/cd_events_buffer" />    
+  <!-- In hz -->
+  <param name="acc_rate" value="30.0" />
+  <!-- In ms , If comment it will lead to all accumulate with no duration cut-->
+  <param name="acc_duration" value="1.0" />
+  <!-- If select true the image will become gray and positive polarity will become white and negtive will become black -->
+  <param name="polarity_difference" value="true" />
+  <param name="height_ev" value="480" />
+  <param name="width_ev" value="640" />
+  <param name="n_threads" value="4" />
+  <node name="accumulate_event_image" pkg="sist_event_utility" type="accumulate_event_image" output="screen">
+  </node>
+  <!-- Visualization -->
+  <!-- <node pkg="rqt_gui" type="rqt_gui" name="rqt_gui"/> -->
+</launch>

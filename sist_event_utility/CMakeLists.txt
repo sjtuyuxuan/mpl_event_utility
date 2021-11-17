@@ -13,6 +13,8 @@ find_package(catkin REQUIRED COMPONENTS
   rosbag
   message_generation
   std_msgs
+  image_transport
+  cv_bridge
 )
 find_package(Boost REQUIRED COMPONENTS system)
 find_package(Eigen3)
@@ -146,6 +148,8 @@ include_directories(
 add_executable(split_bag src/split.cpp)
 add_executable(merge_bag src/merge.cpp)
 add_executable(time_reconstruct src/timestemp.cpp)
+add_executable(blink_charuco_board src/blink_charuco_board/board.cpp)
+add_executable(accumulate_event_image src/accumulate_event/accumulate.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -159,6 +163,8 @@ add_executable(time_reconstruct src/timestemp.cpp)
 target_link_libraries(split_bag ${catkin_LIBRARIES})
 target_link_libraries(merge_bag ${catkin_LIBRARIES})
 target_link_libraries(time_reconstruct ${catkin_LIBRARIES})
+target_link_libraries(blink_charuco_board ${catkin_LIBRARIES} ${OpenCV_LIBS})
+target_link_libraries(accumulate_event_image ${catkin_LIBRARIES} ${OpenCV_LIBS})
 ## Specify libraries to link a library or executable target against
 # target_link_libraries(${PROJECT_NAME}_node
 #   ${catkin_LIBRARIES}

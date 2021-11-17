@@ -1,0 +1,6 @@
+half_width : 3
+height : 3
+pixel_per_block : 200
+
+image_out : false
+image_out_path : "~/"

@@ -1,0 +1,4 @@
+<launch>
+  <rosparam command="load" file="$(find sist_event_utility)/config/blink_charuco/config.yaml" />
+  <node name="blink_charuco_board" pkg="sist_event_utility" type="blink_charuco_board" output="screen"/>
+</launch>
