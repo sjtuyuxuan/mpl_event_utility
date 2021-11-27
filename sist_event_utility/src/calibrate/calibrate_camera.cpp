@@ -27,10 +27,15 @@
 #define SUCC 0
 #define KINECT_TIME 0.04
 
-using EventArray = sist_event_utility::EventArray;
-using MarkerCv   = std::pair<std::vector<int>, std::vector<cv::Point2f>>;
+using EventArray      = sist_event_utility::EventArray;
+using MarkerCv        = std::pair<std::vector<int>, std::vector<cv::Point2f>>;
+using MapIndexPoint3d = std::map<int, cv::Point3d>;
 static bool SELECT;
 static bool SAVE_IMAGE;
+
+inline bool Near(double a, double b) {
+  return a - b < 1e-3 && b - a < 1e-3;
+}
 
 cv::Point2d Projection(const cv::Point3d& obj, const cv::Mat& K, const Eigen::Affine3d& extrinsic) {
   Eigen::Vector3d obj_p(obj.x, obj.y, obj.z);
@@ -131,6 +136,9 @@ class CostFunctionPnP {
 struct SyncFrame
 {
   using Ptr = boost::shared_ptr<SyncFrame>;
+
+  ros::Time stamp_;
+
   cv::Mat rbg_1_;
   cv::Mat rbg_2_;
   cv::Mat rbg_3_;
@@ -160,10 +168,6 @@ struct SyncFrame
   bool valid_ = true;
 };
 
-inline bool Near(double a, double b) {
-  return a - b < 1e-3 && b - a < 1e-3;
-}
-
 int LoadImageFromEvent(std::vector<sist_event_utility::EventArray::Ptr>& event,
                        const ros::Time time,
                        cv::Mat& mat) {
@@ -186,8 +190,8 @@ int LoadImageFromEvent(std::vector<sist_event_utility::EventArray::Ptr>& event,
   return 0;
 }
 
-int DetectAndSaveImage(cv::Mat& image,
-                       cv::Mat& image_raw,
+int DetectAndSaveImage(cv::Mat image,
+                       cv::Mat image_raw,
                        MarkerCv& out_marker,
                        const std::string& raw_path,
                        bool& valid) {
@@ -217,6 +221,115 @@ int DetectAndSaveImage(cv::Mat& image,
   if (SAVE_IMAGE) cv::imwrite(raw_path + "detected.png", image);
   return SUCC;
 }
+
+int AddResidualBlock(ceres::Problem& problem,
+                     const MarkerCv& marker,
+                     const Eigen::Affine3d& gt,
+                     MapIndexPoint3d& map,
+                     cv::Mat projection_matrixs,
+                     std::vector<double*> res) {
+  for (int i = 0; i < marker.first.size(); i++) {
+    if (map.find(marker.first[i]) != map.end()) {
+      problem.AddResidualBlock(
+          CostFunctionPnP::create(map[marker.first[i]], marker.second[i], projection_matrixs, gt),
+          nullptr,
+          res[0],
+          res[1],
+          res[2],
+          res[3]);
+    }
+  }
+  return SUCC;
+}
+class PoseManager {
+ public:
+  using Ptr = boost::shared_ptr<PoseManager>;
+  int Enqueue(geometry_msgs::PoseStamped::Ptr ptr) {
+    if (gt_buffer_.empty()) {
+      gt_buffer_.emplace_back(ptr);
+    } else if (ptr->header.stamp.toSec() > gt_buffer_.back()->header.stamp.toSec() &&
+               ptr->header.stamp.toSec() - gt_buffer_.back()->header.stamp.toSec() < 0.1)
+      gt_buffer_.emplace_back(ptr);
+    else {
+      ROS_WARN("Too big gap or inverse time");
+      return -1;
+    }
+    return SUCC;
+  }
+
+  int GetPose(double time, Eigen::Affine3d& pose) {
+    auto p = gt_buffer_.begin();
+    while (p != gt_buffer_.end() && !Near((*p)->header.stamp.toSec(), time)) {
+      ++p;
+    }
+    if (p == gt_buffer_.end()) return -1;
+    pose =
+        Eigen::Translation3d((*p)->pose.position.x, (*p)->pose.position.y, (*p)->pose.position.z) *
+        Eigen::Quaterniond((*p)->pose.orientation.w,
+                           (*p)->pose.orientation.x,
+                           (*p)->pose.orientation.y,
+                           (*p)->pose.orientation.z);
+    return SUCC;
+  }
+
+  int GetPose(ros::Time time, Eigen::Affine3d& pose) {
+    return GetPose(time.toSec(), pose);
+  }
+
+  int GetPose(double time,
+              Eigen::Affine3d& pose,
+              Eigen::Vector3d& angular_vec,
+              Eigen::Vector3d& linear_vec) {
+    auto p = gt_buffer_.begin();
+    while (p != gt_buffer_.end() && !Near((*p)->header.stamp.toSec(), time)) {
+      ++p;
+    }
+    if (p == gt_buffer_.end()) return -1;
+    pose =
+        Eigen::Translation3d((*p)->pose.position.x, (*p)->pose.position.y, (*p)->pose.position.z) *
+        Eigen::Quaterniond((*p)->pose.orientation.w,
+                           (*p)->pose.orientation.x,
+                           (*p)->pose.orientation.y,
+                           (*p)->pose.orientation.z);
+    if (p != gt_buffer_.end() - 1) {
+      p++;
+      Eigen::Affine3d post_pose = Eigen::Translation3d((*p)->pose.position.x,
+                                                       (*p)->pose.position.y,
+                                                       (*p)->pose.position.z) *
+                                  Eigen::Quaterniond((*p)->pose.orientation.w,
+                                                     (*p)->pose.orientation.x,
+                                                     (*p)->pose.orientation.y,
+                                                     (*p)->pose.orientation.z);
+      Eigen::Affine3d pose_diff = pose.inverse() * post_pose;
+      Eigen::Quaterniond rot(pose_diff.rotation());
+      Eigen::Vector3d trans(pose_diff.translation());
+      angular_vec.x() = rot.x() / ((*p)->header.stamp.toSec() - (*(p - 1))->header.stamp.toSec());
+      angular_vec.y() = rot.y() / ((*p)->header.stamp.toSec() - (*(p - 1))->header.stamp.toSec());
+      angular_vec.z() = rot.z() / ((*p)->header.stamp.toSec() - (*(p - 1))->header.stamp.toSec());
+      linear_vec      = trans / ((*p)->header.stamp.toSec() - (*(p - 1))->header.stamp.toSec());
+    } else {
+      p--;
+      Eigen::Affine3d pre_pose = Eigen::Translation3d((*p)->pose.position.x,
+                                                      (*p)->pose.position.y,
+                                                      (*p)->pose.position.z) *
+                                 Eigen::Quaterniond((*p)->pose.orientation.w,
+                                                    (*p)->pose.orientation.x,
+                                                    (*p)->pose.orientation.y,
+                                                    (*p)->pose.orientation.z);
+      Eigen::Affine3d pose_diff = pre_pose.inverse() * pose;
+      Eigen::Quaterniond rot(pose_diff.rotation());
+      Eigen::Vector3d trans(pose_diff.translation());
+      angular_vec.x() = rot.x() / ((*p)->header.stamp.toSec() - (*(p - 1))->header.stamp.toSec());
+      angular_vec.y() = rot.y() / ((*p)->header.stamp.toSec() - (*(p - 1))->header.stamp.toSec());
+      angular_vec.z() = rot.z() / ((*p)->header.stamp.toSec() - (*(p - 1))->header.stamp.toSec());
+      linear_vec      = trans / ((*p)->header.stamp.toSec() - (*(p - 1))->header.stamp.toSec());
+    }
+    return SUCC;
+  }
+
+ private:
+  std::vector<geometry_msgs::PoseStamped::Ptr> gt_buffer_;
+};
 
 int main(int argc, char** argv) {
   ros::init(argc, argv, "calibration");
@@ -386,9 +499,9 @@ int main(int argc, char** argv) {
   ROS_INFO("Start loading ...");
 
   auto current_time = ros::Time(0);
-  Eigen::Affine3d pose_pre, pose_late, pose_temp, pose_diff;
-  bool first_gt = true;
+  bool first_gt     = true;
   ros::Time kinect_last_time(0);
+  PoseManager pose_manager;
   foreach (rosbag::MessageInstance const m, view) {
     if (m.getTopic() == topic_rgb_1) {
       rgb_1_buffer.emplace_back(m.instantiate<sensor_msgs::Image>());
@@ -403,7 +516,7 @@ int main(int argc, char** argv) {
     if (rgb_5 && m.getTopic() == topic_rgb_5) {
       if (kinect_last_time.toNSec() != 0 &&
           m.getTime().toSec() - kinect_last_time.toSec() > KINECT_TIME) {
-        rgb_3_buffer.emplace_back(sensor_msgs::ImagePtr());
+        rgb_5_buffer.emplace_back(nullptr);
         ROS_WARN("Detect one frame lost");
       }
       kinect_last_time = m.getTime();
@@ -417,66 +530,54 @@ int main(int argc, char** argv) {
 
     if (imu && m.getTopic() == topic_imu)
       imu_buffer.emplace_back(m.instantiate<sensor_msgs::Imu>());
-    if (m.getTopic() == topic_gt) {
-      gt_buffer.emplace_back(m.instantiate<geometry_msgs::PoseStamped>());
-      if (first_gt) {
-        pose_temp = Eigen::Translation3d(gt_buffer.front()->pose.position.x,
-                                         gt_buffer.front()->pose.position.y,
-                                         gt_buffer.front()->pose.position.z) *
-                    Eigen::Quaterniond(gt_buffer.front()->pose.orientation.w,
-                                       gt_buffer.front()->pose.orientation.x,
-                                       gt_buffer.front()->pose.orientation.y,
-                                       gt_buffer.front()->pose.orientation.z);
-        pose_late = pose_temp;
-      }
-    }
+    if (m.getTopic() == topic_gt) pose_manager.Enqueue(m.instantiate<geometry_msgs::PoseStamped>());
     while (rgb_1_buffer.size() > 10) {
-      pose_pre  = pose_temp;
-      pose_temp = pose_late;
-      for (int i = 0; i < frame_gt_ratio; ++i) {
-        gt_buffer.pop_front();
-      }
-      pose_late = Eigen::Translation3d(gt_buffer.front()->pose.position.x,
-                                       gt_buffer.front()->pose.position.y,
-                                       gt_buffer.front()->pose.position.z) *
-                  Eigen::Quaterniond(gt_buffer.front()->pose.orientation.w,
-                                     gt_buffer.front()->pose.orientation.x,
-                                     gt_buffer.front()->pose.orientation.y,
-                                     gt_buffer.front()->pose.orientation.z);
-
-      pose_diff = pose_pre.inverse() * pose_late;
-      Eigen::AngleAxisd rot(pose_diff.rotation());
-      if (pose_diff.translation().norm() < 0.0015 && rot.angle() < 0.0015) {
+      Eigen::Affine3d pose;
+      Eigen::Vector3d angula_velocity;
+      Eigen::Vector3d linear_velocity;
+      pose_manager.GetPose(
+          rgb_1_buffer.front()->header.stamp.toSec(), pose, angula_velocity, linear_velocity);
+      if (angula_velocity.norm() < 0.03 && linear_velocity.norm() < 0.015) {
         auto load = boost::make_shared<SyncFrame>();
+        load->rbg_1_ =
+            cv_bridge::toCvCopy(*rgb_1_buffer.front(), sensor_msgs::image_encodings::BGR8)->image;
+        load->stamp_ = rgb_1_buffer.front()->header.stamp;
         if (ev_1) {
           LoadImageFromEvent(ev_1_buffer, rgb_1_buffer.front()->header.stamp, load->ev_1_);
         }
         if (ev_2) {
           LoadImageFromEvent(ev_2_buffer, rgb_1_buffer.front()->header.stamp, load->ev_2_);
         }
-        load->rbg_1_ =
-            cv_bridge::toCvCopy(*rgb_1_buffer.front(), sensor_msgs::image_encodings::BGR8)->image;
+
         if (rgb_2) {
           load->rbg_2_ =
               cv_bridge::toCvCopy(*rgb_2_buffer.front(), sensor_msgs::image_encodings::BGR8)->image;
+          if (!Near(rgb_2_buffer.front()->header.stamp.toSec(), load->stamp_.toSec()))
+            ROS_ERROR("UNSYNC rgb_2");
         }
         if (rgb_3) {
           load->rbg_3_ =
               cv_bridge::toCvCopy(*rgb_3_buffer.front(), sensor_msgs::image_encodings::BGR8)->image;
+          if (!Near(rgb_3_buffer.front()->header.stamp.toSec(), load->stamp_.toSec()))
+            ROS_ERROR("UNSYNC rgb_3");
         }
         if (rgb_4) {
           load->rbg_4_ =
               cv_bridge::toCvCopy(*rgb_4_buffer.front(), sensor_msgs::image_encodings::BGR8)->image;
+          if (!Near(rgb_4_buffer.front()->header.stamp.toSec(), load->stamp_.toSec()))
+            ROS_ERROR("UNSYNC rgb_4");
         }
         if (rgb_5) {
           if (rgb_5_buffer.front() != nullptr) {
             load->rbg_5_ =
                 cv_bridge::toCvCopy(*rgb_5_buffer.front(), sensor_msgs::image_encodings::BGR8)
                     ->image;
+            if (!Near(rgb_5_buffer.front()->header.stamp.toSec(), load->stamp_.toSec()))
+              ROS_ERROR_STREAM("UNSYNC rgb_5" << rgb_5_buffer.front()->header.stamp.toSec() -
+                                                     load->stamp_.toSec());
           }
         }
-        load->gt = pose_temp;
-
+        load->gt = pose;
         sync_frames.emplace_back(load);
       }
       rgb_1_buffer.pop_front();
@@ -484,9 +585,6 @@ int main(int argc, char** argv) {
       if (rgb_3) rgb_3_buffer.pop_front();
       if (rgb_4) rgb_4_buffer.pop_front();
       if (rgb_5) rgb_5_buffer.pop_front();
-      ROS_DEBUG_STREAM("Time diff" << rgb_1_buffer.front()->header.stamp.toSec() -
-                                          gt_buffer.front()->header.stamp.toSec()
-                                   << "s");
     }
   }
   ROS_INFO_STREAM("There is " << sync_frames.size() << " frame");
@@ -599,7 +697,6 @@ int main(int argc, char** argv) {
   problem.AddParameterBlock(q_w_board, 4, new ceres::QuaternionParameterization());
   problem.AddParameterBlock(t_w_board, 3);
 
-  std::vector<double> unit_t{0, 0, 1};
   std::vector<double> q_cam_body_vector;
   std::vector<double> t_cam_body_vector;
   for (int index_cx = 0; index_cx < 5; index_cx++) {
@@ -612,6 +709,9 @@ int main(int argc, char** argv) {
     problem.AddParameterBlock(param_q, 4, new ceres::QuaternionParameterization());
     problem.AddParameterBlock(param_t, 3);
   }
+  double* q_c_body = q_cam_body_vector.data();
+  double* t_c_body = t_cam_body_vector.data();
+  std::vector<double*> res{q_c_body, t_c_body, q_w_board, t_w_board};
 
   std::map<int, cv::Point3d> rgb_map{{0, cv::Point3d(0.000, 0.122, 0.000)},
                                      {1, cv::Point3d(0.061, 0.122, 0.000)},
@@ -632,106 +732,28 @@ int main(int argc, char** argv) {
                                     {18, cv::Point3d(0.244, 0.000, 0.000)},
                                     {19, cv::Point3d(0.305, 0.000, 0.000)},
                                     {20, cv::Point3d(0.366, 0.000, 0.000)}};
-  double *q_c_body, *t_c_body;
+
   for (const auto frame : sync_frames_selected) {
-    q_c_body = q_cam_body_vector.data();
-    t_c_body = t_cam_body_vector.data();
-    for (int i = 0; i < frame->rbg_1_marker_.first.size(); i++) {
-      if (rgb_map.find(frame->rbg_1_marker_.first[i]) != rgb_map.end()) {
-        problem.AddResidualBlock(
-            CostFunctionPnP::create(rgb_map[frame->rbg_1_marker_.first[i]],
-                                    frame->rbg_1_marker_.second[i],
-                                    projection_matrixs[0],
-                                    sync_frames_selected[0]->gt.inverse() * frame->gt),
-            nullptr,
-            q_c_body,
-            t_c_body,
-            q_w_board,
-            t_w_board);
-      }
-    }
-
-    q_c_body = q_cam_body_vector.data() + 4;
-    t_c_body = t_cam_body_vector.data() + 3;
-    for (int i = 0; i < frame->rbg_2_marker_.first.size(); i++) {
-      if (rgb_map.find(frame->rbg_2_marker_.first[i]) != rgb_map.end()) {
-        problem.AddResidualBlock(
-            CostFunctionPnP::create(rgb_map[frame->rbg_2_marker_.first[i]],
-                                    frame->rbg_2_marker_.second[i],
-                                    projection_matrixs[1],
-                                    sync_frames_selected[0]->gt.inverse() * frame->gt),
-            nullptr,
-            q_c_body,
-            t_c_body,
-            q_w_board,
-            t_w_board);
-      }
-    }
-
-    q_c_body = q_cam_body_vector.data() + 8;
-    t_c_body = t_cam_body_vector.data() + 6;
-    for (int i = 0; i < frame->rbg_5_marker_.first.size(); i++) {
-      if (rgb_map.find(frame->rbg_5_marker_.first[i]) != rgb_map.end()) {
-        problem.AddResidualBlock(
-            CostFunctionPnP::create(rgb_map[frame->rbg_5_marker_.first[i]],
-                                    frame->rbg_5_marker_.second[i],
-                                    projection_matrixs[2],
-                                    sync_frames_selected[0]->gt.inverse() * frame->gt),
-            nullptr,
-            q_c_body,
-            t_c_body,
-            q_w_board,
-            t_w_board);
-      }
-    }
-
-    q_c_body = q_cam_body_vector.data() + 12;
-    t_c_body = t_cam_body_vector.data() + 9;
-    for (int i = 0; i < frame->ev_1_marker_.first.size(); i++) {
-      if (ev_map.find(frame->ev_1_marker_.first[i]) != ev_map.end()) {
-        problem.AddResidualBlock(
-            CostFunctionPnP::create(ev_map[frame->ev_1_marker_.first[i]],
-                                    frame->ev_1_marker_.second[i],
-                                    projection_matrixs[3],
-                                    sync_frames_selected[0]->gt.inverse() * frame->gt),
-            nullptr,
-            q_c_body,
-            t_c_body,
-            q_w_board,
-            t_w_board);
-      }
-    }
-
-    q_c_body = q_cam_body_vector.data() + 16;
-    t_c_body = t_cam_body_vector.data() + 12;
-    for (int i = 0; i < frame->ev_2_marker_.first.size(); i++) {
-      if (ev_map.find(frame->ev_2_marker_.first[i]) != ev_map.end()) {
-        problem.AddResidualBlock(
-            CostFunctionPnP::create(ev_map[frame->ev_2_marker_.first[i]],
-                                    frame->ev_2_marker_.second[i],
-                                    projection_matrixs[4],
-                                    sync_frames_selected[0]->gt.inverse() * frame->gt),
-            nullptr,
-            q_c_body,
-            t_c_body,
-            q_w_board,
-            t_w_board);
-      }
-    }
+    AddResidualBlock(problem,
+                     frame->rbg_1_marker_,
+                     sync_frames_selected[0]->gt.inverse() * frame->gt,
+                     rgb_map,
+                     projection_matrixs[0],
+                     res);
   }
-  ceres::Solver::Options options;
-  options.linear_solver_type           = ceres::DENSE_QR;
-  options.minimizer_progress_to_stdout = true;
-  options.max_num_iterations           = 100;
-  ceres::Solver::Summary summary;
-  ceres::Solve(options, &problem, &summary);
+  // ceres::Solver::Options options;
+  // options.linear_solver_type           = ceres::DENSE_QR;
+  // options.minimizer_progress_to_stdout = true;
+  // options.max_num_iterations           = 1;
+  // ceres::Solver::Summary summary;
+  // ceres::Solve(options, &problem, &summary);
 
   std::vector<Eigen::Affine3d> T_cam_body;
   Eigen::Affine3d T_world_board = Eigen::Translation3d(t_world_board_vector[0],
                                                        t_world_board_vector[1],
                                                        t_world_board_vector[2]) *
                                   Eigen::Quaterniond(q_world_board_vector[0],
-                                                     q_world_board_vector[41],
+                                                     q_world_board_vector[1],
                                                      q_world_board_vector[2],
                                                      q_world_board_vector[3])
                                       .normalized();
@@ -752,15 +774,23 @@ int main(int argc, char** argv) {
             << T_world_board.translation() << std::endl
             << "m" << std::endl
             << std::endl;
+  std::cout << "T_cb" << std::endl
+            << "R:" << std::endl
+            << T_cam_body[0].rotation() << std::endl
+            << "t:" << std::endl
+            << T_cam_body[0].translation() << std::endl
+            << "m" << std::endl
+            << std::endl;
 
   for (const auto frame : sync_frames_selected) {
     for (auto p : frame->rbg_1_marker_.first) {
       cv::Point3d point;
       if (rgb_map.find(p) != rgb_map.end()) point = rgb_map[p];
-      cv::Point2d corner = Projection(point,
-                                      projection_matrixs[0],
-                                      T_cam_body[0] * frame->gt.inverse() *
-                                          sync_frames_selected[0]->gt * T_world_board);
+      // T_cam_body[0] *
+      cv::Point2d corner =
+          Projection(point,
+                     projection_matrixs[0],
+                     frame->gt.inverse() * sync_frames_selected[0]->gt * T_world_board);
       cv::circle(frame->rbg_1_rectified_, corner, 2, (0, 255, 255), 3);
     }
     cv::imshow("test_win", frame->rbg_1_rectified_);
