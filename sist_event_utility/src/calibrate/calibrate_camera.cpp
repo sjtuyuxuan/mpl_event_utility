@@ -97,8 +97,8 @@ class CostFunctionPnP {
 
     ceres::QuaternionRotatePoint(q_body_world, point_world, point_body);
     point_body[0] += T(t_gt_body_world_.x());
-    point_body[0] += T(t_gt_body_world_.y());
-    point_body[0] += T(t_gt_body_world_.z());
+    point_body[1] += T(t_gt_body_world_.y());
+    point_body[2] += T(t_gt_body_world_.z());
 
     ceres::QuaternionRotatePoint(q_cam_body, point_body, point_camera);
     point_camera[0] += t_cam_body[0];
@@ -130,6 +130,23 @@ class CostFunctionPnP {
                                      const Eigen::Affine3d& gt) {
     return new ceres::AutoDiffCostFunction<CostFunctionPnP, 2, 4, 3, 4, 3>(
         new CostFunctionPnP(objpoint, imgpoint, camera_intrinsic, gt));
+  }
+};
+
+class CostFunctionReguT {
+ private:
+  double sigma_;
+
+ public:
+  CostFunctionReguT(const double simga) : sigma_(simga) {}
+  template <typename T> bool operator()(const T* const t_cam_body, T* residual) const {
+    residual[0] = T(sigma_) * t_cam_body[0];
+    residual[1] = T(sigma_) * t_cam_body[1];
+    residual[2] = T(sigma_) * t_cam_body[2];
+    return true;
+  }
+  static ceres::CostFunction* create(const double simga) {
+    return new ceres::AutoDiffCostFunction<CostFunctionReguT, 3, 3>(new CostFunctionReguT(simga));
   }
 };
 
@@ -692,6 +709,8 @@ int main(int argc, char** argv) {
 
   std::vector<double> q_world_board_vector{1, 0, 0, 0};
   std::vector<double> t_world_board_vector{0, 0, 1};
+  std::vector<double> zero_t{0, 0, 0};
+  std::vector<double> unit_q{1, 0, 0, 0};
   double* q_w_board = q_world_board_vector.data();
   double* t_w_board = t_world_board_vector.data();
   problem.AddParameterBlock(q_w_board, 4, new ceres::QuaternionParameterization());
@@ -733,20 +752,51 @@ int main(int argc, char** argv) {
                                     {19, cv::Point3d(0.305, 0.000, 0.000)},
                                     {20, cv::Point3d(0.366, 0.000, 0.000)}};
 
+  // for (const auto frame : sync_frames_selected) {
+
+  // }
+  AddResidualBlock(problem,
+                   sync_frames_selected[0]->rbg_1_marker_,
+                   sync_frames_selected[0]->gt,
+                   rgb_map,
+                   projection_matrixs[0],
+                   res);
+  AddResidualBlock(problem,
+                   sync_frames_selected[1]->rbg_1_marker_,
+                   sync_frames_selected[1]->gt,
+                   rgb_map,
+                   projection_matrixs[0],
+                   res);
+  AddResidualBlock(problem,
+                   sync_frames_selected.back()->rbg_1_marker_,
+                   sync_frames_selected.back()->gt,
+                   rgb_map,
+                   projection_matrixs[0],
+                   res);
+  AddResidualBlock(problem,
+                   sync_frames_selected[200]->rbg_1_marker_,
+                   sync_frames_selected[200]->gt,
+                   rgb_map,
+                   projection_matrixs[0],
+                   res);
+  problem.AddResidualBlock(CostFunctionReguT::create(1000), nullptr, res[1]);
+  ceres::Solver::Options options;
+  options.linear_solver_type           = ceres::DENSE_QR;
+  options.minimizer_progress_to_stdout = true;
+  options.max_num_iterations           = 100;
+  ceres::Solver::Summary summary;
+  ceres::Solve(options, &problem, &summary);
+
+  ceres::Problem problem_2;
+  problem_2.AddParameterBlock(q_w_board, 4, new ceres::QuaternionParameterization());
+  problem_2.AddParameterBlock(t_w_board, 3);
+  problem_2.AddParameterBlock(q_c_body, 4, new ceres::QuaternionParameterization());
+  problem_2.AddParameterBlock(t_c_body, 3);
   for (const auto frame : sync_frames_selected) {
-    AddResidualBlock(problem,
-                     frame->rbg_1_marker_,
-                     sync_frames_selected[0]->gt.inverse() * frame->gt,
-                     rgb_map,
-                     projection_matrixs[0],
-                     res);
+    AddResidualBlock(
+        problem_2, frame->rbg_1_marker_, frame->gt, rgb_map, projection_matrixs[0], res);
   }
-  // ceres::Solver::Options options;
-  // options.linear_solver_type           = ceres::DENSE_QR;
-  // options.minimizer_progress_to_stdout = true;
-  // options.max_num_iterations           = 1;
-  // ceres::Solver::Summary summary;
-  // ceres::Solve(options, &problem, &summary);
+  ceres::Solve(options, &problem_2, &summary);
 
   std::vector<Eigen::Affine3d> T_cam_body;
   Eigen::Affine3d T_world_board = Eigen::Translation3d(t_world_board_vector[0],
@@ -787,10 +837,8 @@ int main(int argc, char** argv) {
       cv::Point3d point;
       if (rgb_map.find(p) != rgb_map.end()) point = rgb_map[p];
       // T_cam_body[0] *
-      cv::Point2d corner =
-          Projection(point,
-                     projection_matrixs[0],
-                     frame->gt.inverse() * sync_frames_selected[0]->gt * T_world_board);
+      cv::Point2d corner = Projection(
+          point, projection_matrixs[0], T_cam_body[0] * frame->gt.inverse() * T_world_board);
       cv::circle(frame->rbg_1_rectified_, corner, 2, (0, 255, 255), 3);
     }
     cv::imshow("test_win", frame->rbg_1_rectified_);
