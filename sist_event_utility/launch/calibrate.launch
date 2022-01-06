@@ -1,12 +1,12 @@
 <launch>
 
-  <param name="topic_ev_1" value="/prophesee/left/cd_events_buffer_reconstructed" />
-  <param name="topic_ev_2" value="/prophesee/right/cd_events_buffer_reconstructed" />
+  <param name="topic_ev_1" value="/prophesee/left/events" />
+  <param name="topic_ev_2" value="/prophesee/right/events" />
   <param name="topic_rgb_1" value="/stereo/left/image_mono" />
   <param name="topic_rgb_2" value="/stereo/right/image_mono" />
   <param name="topic_rgb_5" value="/kinect/image_raw" />
   <param name="topic_gt" value="/gt/pose" />
-  <param name="bag_path" value="/home/yuxuan/Downloads/joint_calibration1a_synced.bag" />
+  <param name="bag_path" value="/home/yuxuan/Downloads/joint_calibration_moving_synced.bag" />
   <param name="raw_image_path" value="/home/yuxuan/dove/" />
   <param name="select_image_path" value="/home/yuxuan/dove/" />
   <param name="frame_gt_ratio" value="4" />

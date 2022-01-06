@@ -213,7 +213,7 @@ int DetectAndSaveImage(cv::Mat image,
                        const std::string& raw_path,
                        bool& valid) {
   auto dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_50);
-  auto board      = cv::aruco::CharucoBoard::create(8, 4, 0.04f, 0.03f, dictionary);
+  auto board      = cv::aruco::CharucoBoard::create(10, 6, 0.04f, 0.03f, dictionary);
   auto params     = cv::aruco::DetectorParameters::create();
   if (SAVE_IMAGE) {
     cv::imwrite(raw_path + "raw.png", image_raw);
@@ -519,6 +519,7 @@ int main(int argc, char** argv) {
   bool first_gt     = true;
   ros::Time kinect_last_time(0);
   PoseManager pose_manager;
+  int none_adjacent_flag = 0;
   foreach (rosbag::MessageInstance const m, view) {
     if (m.getTopic() == topic_rgb_1) {
       rgb_1_buffer.emplace_back(m.instantiate<sensor_msgs::Image>());
@@ -531,8 +532,7 @@ int main(int argc, char** argv) {
     if (rgb_4 && m.getTopic() == topic_rgb_4)
       rgb_4_buffer.emplace_back(m.instantiate<sensor_msgs::Image>());
     if (rgb_5 && m.getTopic() == topic_rgb_5) {
-      if (kinect_last_time.toNSec() != 0 &&
-          m.getTime().toSec() - kinect_last_time.toSec() > KINECT_TIME) {
+      if (m.getTime().toSec() - kinect_last_time.toSec() > KINECT_TIME) {
         rgb_5_buffer.emplace_back(nullptr);
         ROS_WARN("Detect one frame lost");
       }
@@ -554,49 +554,58 @@ int main(int argc, char** argv) {
       Eigen::Vector3d linear_velocity;
       pose_manager.GetPose(
           rgb_1_buffer.front()->header.stamp.toSec(), pose, angula_velocity, linear_velocity);
-      if (angula_velocity.norm() < 0.03 && linear_velocity.norm() < 0.015) {
-        auto load = boost::make_shared<SyncFrame>();
-        load->rbg_1_ =
-            cv_bridge::toCvCopy(*rgb_1_buffer.front(), sensor_msgs::image_encodings::BGR8)->image;
-        load->stamp_ = rgb_1_buffer.front()->header.stamp;
-        if (ev_1) {
-          LoadImageFromEvent(ev_1_buffer, rgb_1_buffer.front()->header.stamp, load->ev_1_);
-        }
-        if (ev_2) {
-          LoadImageFromEvent(ev_2_buffer, rgb_1_buffer.front()->header.stamp, load->ev_2_);
-        }
-
-        if (rgb_2) {
-          load->rbg_2_ =
-              cv_bridge::toCvCopy(*rgb_2_buffer.front(), sensor_msgs::image_encodings::BGR8)->image;
-          if (!Near(rgb_2_buffer.front()->header.stamp.toSec(), load->stamp_.toSec()))
-            ROS_ERROR("UNSYNC rgb_2");
-        }
-        if (rgb_3) {
-          load->rbg_3_ =
-              cv_bridge::toCvCopy(*rgb_3_buffer.front(), sensor_msgs::image_encodings::BGR8)->image;
-          if (!Near(rgb_3_buffer.front()->header.stamp.toSec(), load->stamp_.toSec()))
-            ROS_ERROR("UNSYNC rgb_3");
-        }
-        if (rgb_4) {
-          load->rbg_4_ =
-              cv_bridge::toCvCopy(*rgb_4_buffer.front(), sensor_msgs::image_encodings::BGR8)->image;
-          if (!Near(rgb_4_buffer.front()->header.stamp.toSec(), load->stamp_.toSec()))
-            ROS_ERROR("UNSYNC rgb_4");
-        }
-        if (rgb_5) {
-          if (rgb_5_buffer.front() != nullptr) {
-            load->rbg_5_ =
-                cv_bridge::toCvCopy(*rgb_5_buffer.front(), sensor_msgs::image_encodings::BGR8)
-                    ->image;
-            if (!Near(rgb_5_buffer.front()->header.stamp.toSec(), load->stamp_.toSec()))
-              ROS_ERROR_STREAM("UNSYNC rgb_5" << rgb_5_buffer.front()->header.stamp.toSec() -
-                                                     load->stamp_.toSec());
+      if (none_adjacent_flag == 0) {
+        if (angula_velocity.norm() < 0.05 && linear_velocity.norm() < 0.025) {
+          auto load = boost::make_shared<SyncFrame>();
+          load->rbg_1_ =
+              cv_bridge::toCvCopy(*rgb_1_buffer.front(), sensor_msgs::image_encodings::BGR8)->image;
+          load->stamp_ = rgb_1_buffer.front()->header.stamp;
+          if (ev_1) {
+            LoadImageFromEvent(ev_1_buffer, rgb_1_buffer.front()->header.stamp, load->ev_1_);
           }
+          if (ev_2) {
+            LoadImageFromEvent(ev_2_buffer, rgb_1_buffer.front()->header.stamp, load->ev_2_);
+          }
+
+          if (rgb_2) {
+            load->rbg_2_ =
+                cv_bridge::toCvCopy(*rgb_2_buffer.front(), sensor_msgs::image_encodings::BGR8)
+                    ->image;
+            if (!Near(rgb_2_buffer.front()->header.stamp.toSec(), load->stamp_.toSec()))
+              ROS_ERROR("UNSYNC rgb_2");
+          }
+          if (rgb_3) {
+            load->rbg_3_ =
+                cv_bridge::toCvCopy(*rgb_3_buffer.front(), sensor_msgs::image_encodings::BGR8)
+                    ->image;
+            if (!Near(rgb_3_buffer.front()->header.stamp.toSec(), load->stamp_.toSec()))
+              ROS_ERROR("UNSYNC rgb_3");
+          }
+          if (rgb_4) {
+            load->rbg_4_ =
+                cv_bridge::toCvCopy(*rgb_4_buffer.front(), sensor_msgs::image_encodings::BGR8)
+                    ->image;
+            if (!Near(rgb_4_buffer.front()->header.stamp.toSec(), load->stamp_.toSec()))
+              ROS_ERROR("UNSYNC rgb_4");
+          }
+          if (rgb_5) {
+            if (rgb_5_buffer.front() != nullptr) {
+              load->rbg_5_ =
+                  cv_bridge::toCvCopy(*rgb_5_buffer.front(), sensor_msgs::image_encodings::BGR8)
+                      ->image;
+              if (!Near(rgb_5_buffer.front()->header.stamp.toSec(), load->stamp_.toSec()))
+                ROS_ERROR_STREAM("UNSYNC rgb_5" << rgb_5_buffer.front()->header.stamp.toSec() -
+                                                       load->stamp_.toSec());
+            }
+          }
+          load->gt = pose;
+          sync_frames.emplace_back(load);
+          none_adjacent_flag = 10;
         }
-        load->gt = pose;
-        sync_frames.emplace_back(load);
+      } else {
+        none_adjacent_flag--;
       }
+
       rgb_1_buffer.pop_front();
       if (rgb_2) rgb_2_buffer.pop_front();
       if (rgb_3) rgb_3_buffer.pop_front();
@@ -629,7 +638,7 @@ int main(int argc, char** argv) {
     cv::remap(frame->ev_1_,
               frame->ev_1_rectified_,
               undistort_maps[3].first,
-              undistort_maps[4].second,
+              undistort_maps[3].second,
               cv::INTER_LINEAR);
     cv::remap(frame->ev_2_,
               frame->ev_2_rectified_,
@@ -705,12 +714,58 @@ int main(int argc, char** argv) {
 
   ////////
   ROS_INFO_STREAM("Start Optimize");
+
+  // INIT GUSEE
+  std::vector<Eigen::Affine3d> T_c_body(5);
+  Eigen::Matrix3d R_c_;
+  Eigen::Vector3d t_c_;
+  // RGBL
+  R_c_ << -0.905122, -0.00682827, 0.425096, 0.072738, -0.987616, 0.139011, 0.418883, 0.156743,
+      0.89441;
+  t_c_ << 0.101638, -0.0197381, -0.0618832;
+  T_c_body[0] = Eigen::Translation3d(t_c_) * R_c_;
+
+  // RGBR
+  R_c_ << -0.9023854087272346, -0.02764739437740916, 0.43004100069211454, 0.08795972678578719,
+      -0.9887472001547043, 0.12100539961510978, 0.4218569423358485, 0.14702024536289784,
+      0.8946632586759735;
+  t_c_ << -0.05374413866867575, -0.018646188915214867, -0.06272942371286014;
+  T_c_body[1] = Eigen::Translation3d(t_c_) * R_c_;
+
+  // KINECT
+  R_c_ << -0.9029417975536044, -0.009760621818751607, 0.42965091192395893, 0.07102431361827394,
+      -0.9893841841539691, 0.1267861583769445, 0.4238528946730445, 0.14499663162945897,
+      0.894049931135799;
+  t_c_ << -0.003985794795598019, 0.013989532507475404, -0.06942861326122202;
+  T_c_body[2] = Eigen::Translation3d(t_c_) * R_c_;
+
+  // EVL
+  R_c_ << -0.8956999264305312, 0.00376471958301107, 0.4446420150817315, 0.07791238413931018,
+      -0.9831656301817372, 0.16527317741512676, 0.43777953516247115, 0.1826787543531047,
+      0.8803284447796544;
+  t_c_ << 0.10107917159200618, 0.017301460825640203, -0.05285456874739738;
+  T_c_body[3] = Eigen::Translation3d(t_c_) * R_c_;
+
+  // EVR
+  R_c_ << -0.8994630198243168, -0.013535463823731804, 0.4367861341844996, 0.09402555535263016,
+      -0.9821040457896881, 0.1631902425104602, 0.4267611628606221, 0.18785311080414796,
+      0.8846393237758183;
+  t_c_ << -0.053251420907182906, 0.01652598661640409, -0.05155847697335957;
+  T_c_body[4] = Eigen::Translation3d(t_c_) * R_c_;
+
+  Eigen::Matrix3d R_world_board;
+  Eigen::Vector3d t_world_board;
+  R_world_board << -0.0692038, 0.196771, -0.978004, -0.0246666, -0.980392, -0.195506, -0.997298,
+      0.0105943, 0.0727005;
+  t_world_board << -0.432485, 1.11513, -0.423231;
+  Eigen::Quaterniond Q_world_board(R_world_board);
+
   ceres::Problem problem;
 
-  std::vector<double> q_world_board_vector{1, 0, 0, 0};
-  std::vector<double> t_world_board_vector{0, 0, 1};
-  std::vector<double> zero_t{0, 0, 0};
-  std::vector<double> unit_q{1, 0, 0, 0};
+  std::vector<double> q_world_board_vector{
+      Q_world_board.w(), Q_world_board.x(), Q_world_board.y(), Q_world_board.z()};
+  std::vector<double> t_world_board_vector{t_world_board.x(), t_world_board.y(), t_world_board.z()};
+
   double* q_w_board = q_world_board_vector.data();
   double* t_w_board = t_world_board_vector.data();
   problem.AddParameterBlock(q_w_board, 4, new ceres::QuaternionParameterization());
@@ -719,10 +774,12 @@ int main(int argc, char** argv) {
   std::vector<double> q_cam_body_vector;
   std::vector<double> t_cam_body_vector;
   for (int index_cx = 0; index_cx < 5; index_cx++) {
-    q_cam_body_vector.insert(
-        q_cam_body_vector.end(), q_world_board_vector.begin(), q_world_board_vector.end());
-    t_cam_body_vector.insert(
-        t_cam_body_vector.end(), t_world_board_vector.begin(), t_world_board_vector.end());
+    Eigen::Quaterniond Q_r_body(T_c_body[index_cx].rotation());
+    std::vector<double> temp_q{Q_r_body.w(), Q_r_body.x(), Q_r_body.y(), Q_r_body.z()};
+    Eigen::Translation3d t_r_body(T_c_body[index_cx].translation());
+    std::vector<double> temp_t{t_r_body.x(), t_r_body.y(), t_r_body.z()};
+    q_cam_body_vector.insert(q_cam_body_vector.end(), temp_q.begin(), temp_q.end());
+    t_cam_body_vector.insert(t_cam_body_vector.end(), temp_t.begin(), temp_t.end());
     double* param_q = q_cam_body_vector.data() + (index_cx * 4);
     double* param_t = t_cam_body_vector.data() + (index_cx * 3);
     problem.AddParameterBlock(param_q, 4, new ceres::QuaternionParameterization());
@@ -730,73 +787,75 @@ int main(int argc, char** argv) {
   }
   double* q_c_body = q_cam_body_vector.data();
   double* t_c_body = t_cam_body_vector.data();
-  std::vector<double*> res{q_c_body, t_c_body, q_w_board, t_w_board};
+  std::vector<std::vector<double*>> res{{q_c_body, t_c_body, q_w_board, t_w_board},
+                                        {q_c_body + 4, t_c_body + 3, q_w_board, t_w_board},
+                                        {q_c_body + 8, t_c_body + 6, q_w_board, t_w_board},
+                                        {q_c_body + 12, t_c_body + 9, q_w_board, t_w_board},
+                                        {q_c_body + 16, t_c_body + 12, q_w_board, t_w_board}};
 
-  std::map<int, cv::Point3d> rgb_map{{0, cv::Point3d(0.000, 0.122, 0.000)},
-                                     {1, cv::Point3d(0.061, 0.122, 0.000)},
-                                     {2, cv::Point3d(0.122, 0.122, 0.000)},
-                                     {7, cv::Point3d(0.000, 0.061, 0.000)},
-                                     {8, cv::Point3d(0.061, 0.061, 0.000)},
-                                     {9, cv::Point3d(0.122, 0.061, 0.000)},
-                                     {14, cv::Point3d(0.000, 0.000, 0.000)},
-                                     {15, cv::Point3d(0.061, 0.000, 0.000)},
-                                     {16, cv::Point3d(0.122, 0.000, 0.000)}};
+  // std::map<int, cv::Point3d> rgb_map{{0, cv::Point3d(0.000, 0.122, 0.000)},
+  //                                    {1, cv::Point3d(0.061, 0.122, 0.000)},
+  //                                    {2, cv::Point3d(0.122, 0.122, 0.000)},
+  //                                    {7, cv::Point3d(0.000, 0.061, 0.000)},
+  //                                    {8, cv::Point3d(0.061, 0.061, 0.000)},
+  //                                    {9, cv::Point3d(0.122, 0.061, 0.000)},
+  //                                    {14, cv::Point3d(0.000, 0.000, 0.000)},
+  //                                    {15, cv::Point3d(0.061, 0.000, 0.000)},
+  //                                    {16, cv::Point3d(0.122, 0.000, 0.000)}};
 
-  std::map<int, cv::Point3d> ev_map{{4, cv::Point3d(0.244, 0.122, 0.000)},
-                                    {5, cv::Point3d(0.305, 0.122, 0.000)},
-                                    {6, cv::Point3d(0.366, 0.122, 0.000)},
-                                    {11, cv::Point3d(0.244, 0.061, 0.000)},
-                                    {12, cv::Point3d(0.305, 0.061, 0.000)},
-                                    {13, cv::Point3d(0.366, 0.061, 0.000)},
-                                    {18, cv::Point3d(0.244, 0.000, 0.000)},
-                                    {19, cv::Point3d(0.305, 0.000, 0.000)},
-                                    {20, cv::Point3d(0.366, 0.000, 0.000)}};
+  // std::map<int, cv::Point3d> ev_map{{4, cv::Point3d(0.244, 0.122, 0.000)},
+  //                                   {5, cv::Point3d(0.305, 0.122, 0.000)},
+  //                                   {6, cv::Point3d(0.366, 0.122, 0.000)},
+  //                                   {11, cv::Point3d(0.244, 0.061, 0.000)},
+  //                                   {12, cv::Point3d(0.305, 0.061, 0.000)},
+  //                                   {13, cv::Point3d(0.366, 0.061, 0.000)},
+  //                                   {18, cv::Point3d(0.244, 0.000, 0.000)},
+  //                                   {19, cv::Point3d(0.305, 0.000, 0.000)},
+  //                                   {20, cv::Point3d(0.366, 0.000, 0.000)}};
 
-  // for (const auto frame : sync_frames_selected) {
+  std::map<int, cv::Point3d> rgb_map{
+      {0, cv::Point3d(0.0000, 0.1752, 0.000)},  {1, cv::Point3d(0.0438, 0.1752, 0.000)},
+      {2, cv::Point3d(0.0876, 0.1752, 0.000)},  {3, cv::Point3d(0.1314, 0.1752, 0.000)},
+      {9, cv::Point3d(0.0000, 0.1314, 0.000)},  {10, cv::Point3d(0.0438, 0.1314, 0.000)},
+      {11, cv::Point3d(0.0876, 0.1314, 0.000)}, {12, cv::Point3d(0.1314, 0.1314, 0.000)},
+      {18, cv::Point3d(0.0000, 0.0876, 0.000)}, {19, cv::Point3d(0.0438, 0.0876, 0.000)},
+      {20, cv::Point3d(0.0876, 0.0876, 0.000)}, {21, cv::Point3d(0.1314, 0.0876, 0.000)},
+      {27, cv::Point3d(0.0000, 0.0438, 0.000)}, {28, cv::Point3d(0.0438, 0.0438, 0.000)},
+      {29, cv::Point3d(0.0876, 0.0438, 0.000)}, {30, cv::Point3d(0.1314, 0.0438, 0.000)},
+      {36, cv::Point3d(0.0000, 0.0000, 0.000)}, {37, cv::Point3d(0.0438, 0.0000, 0.000)},
+      {38, cv::Point3d(0.0876, 0.0000, 0.000)}, {39, cv::Point3d(0.1314, 0.0000, 0.000)}};
 
-  // }
-  AddResidualBlock(problem,
-                   sync_frames_selected[0]->rbg_1_marker_,
-                   sync_frames_selected[0]->gt,
-                   rgb_map,
-                   projection_matrixs[0],
-                   res);
-  AddResidualBlock(problem,
-                   sync_frames_selected[1]->rbg_1_marker_,
-                   sync_frames_selected[1]->gt,
-                   rgb_map,
-                   projection_matrixs[0],
-                   res);
-  AddResidualBlock(problem,
-                   sync_frames_selected.back()->rbg_1_marker_,
-                   sync_frames_selected.back()->gt,
-                   rgb_map,
-                   projection_matrixs[0],
-                   res);
-  AddResidualBlock(problem,
-                   sync_frames_selected[200]->rbg_1_marker_,
-                   sync_frames_selected[200]->gt,
-                   rgb_map,
-                   projection_matrixs[0],
-                   res);
-  problem.AddResidualBlock(CostFunctionReguT::create(1000), nullptr, res[1]);
+  std::map<int, cv::Point3d> ev_map{
+      {5, cv::Point3d(0.2190, 0.1752, 0.000)},  {6, cv::Point3d(0.2628, 0.1752, 0.000)},
+      {7, cv::Point3d(0.3066, 0.1752, 0.000)},  {8, cv::Point3d(0.3504, 0.1752, 0.000)},
+      {14, cv::Point3d(0.2190, 0.1314, 0.000)}, {15, cv::Point3d(0.2628, 0.1314, 0.000)},
+      {16, cv::Point3d(0.3066, 0.1314, 0.000)}, {17, cv::Point3d(0.3504, 0.1314, 0.000)},
+      {23, cv::Point3d(0.2190, 0.0876, 0.000)}, {24, cv::Point3d(0.2628, 0.0876, 0.000)},
+      {25, cv::Point3d(0.3066, 0.0876, 0.000)}, {26, cv::Point3d(0.3504, 0.0876, 0.000)},
+      {32, cv::Point3d(0.2190, 0.0438, 0.000)}, {33, cv::Point3d(0.2628, 0.0438, 0.000)},
+      {34, cv::Point3d(0.3066, 0.0438, 0.000)}, {35, cv::Point3d(0.3504, 0.0438, 0.000)},
+      {41, cv::Point3d(0.2190, 0.0000, 0.000)}, {42, cv::Point3d(0.2628, 0.0000, 0.000)},
+      {43, cv::Point3d(0.3066, 0.0000, 0.000)}, {44, cv::Point3d(0.3504, 0.0000, 0.000)}};
+
+  for (const auto frame : sync_frames_selected) {
+    AddResidualBlock(
+        problem, frame->rbg_1_marker_, frame->gt, rgb_map, projection_matrixs[0], res[0]);
+    AddResidualBlock(
+        problem, frame->rbg_2_marker_, frame->gt, rgb_map, projection_matrixs[1], res[1]);
+    AddResidualBlock(
+        problem, frame->rbg_5_marker_, frame->gt, rgb_map, projection_matrixs[2], res[2]);
+    // AddResidualBlock(
+    //     problem, frame->ev_1_marker_, frame->gt, ev_map, projection_matrixs[3], res[3]);
+    AddResidualBlock(
+        problem, frame->ev_2_marker_, frame->gt, ev_map, projection_matrixs[4], res[4]);
+  }
+
   ceres::Solver::Options options;
   options.linear_solver_type           = ceres::DENSE_QR;
   options.minimizer_progress_to_stdout = true;
   options.max_num_iterations           = 100;
   ceres::Solver::Summary summary;
   ceres::Solve(options, &problem, &summary);
-
-  ceres::Problem problem_2;
-  problem_2.AddParameterBlock(q_w_board, 4, new ceres::QuaternionParameterization());
-  problem_2.AddParameterBlock(t_w_board, 3);
-  problem_2.AddParameterBlock(q_c_body, 4, new ceres::QuaternionParameterization());
-  problem_2.AddParameterBlock(t_c_body, 3);
-  for (const auto frame : sync_frames_selected) {
-    AddResidualBlock(
-        problem_2, frame->rbg_1_marker_, frame->gt, rgb_map, projection_matrixs[0], res);
-  }
-  ceres::Solve(options, &problem_2, &summary);
 
   std::vector<Eigen::Affine3d> T_cam_body;
   Eigen::Affine3d T_world_board = Eigen::Translation3d(t_world_board_vector[0],
@@ -816,19 +875,19 @@ int main(int argc, char** argv) {
                                                q_cam_body_vector[4 * index_cx + 2],
                                                q_cam_body_vector[4 * index_cx + 3])
                                 .normalized());
+    std::cout << "T_cb" << index_cx << std::endl
+              << "R:" << std::endl
+              << T_cam_body[index_cx].rotation() << std::endl
+              << "t:" << std::endl
+              << T_cam_body[index_cx].translation() << std::endl
+              << "m" << std::endl
+              << std::endl;
   }
   std::cout << "T_wb" << std::endl
             << "R:" << std::endl
             << T_world_board.rotation() << std::endl
             << "t:" << std::endl
             << T_world_board.translation() << std::endl
-            << "m" << std::endl
-            << std::endl;
-  std::cout << "T_cb" << std::endl
-            << "R:" << std::endl
-            << T_cam_body[0].rotation() << std::endl
-            << "t:" << std::endl
-            << T_cam_body[0].translation() << std::endl
             << "m" << std::endl
             << std::endl;
 
@@ -842,6 +901,26 @@ int main(int argc, char** argv) {
       cv::circle(frame->rbg_1_rectified_, corner, 2, (0, 255, 255), 3);
     }
     cv::imshow("test_win", frame->rbg_1_rectified_);
+    cv::waitKey(0);
+    for (auto p : frame->ev_1_marker_.first) {
+      cv::Point3d point;
+      if (ev_map.find(p) != ev_map.end()) point = ev_map[p];
+      // T_cam_body[0] *
+      cv::Point2d corner = Projection(
+          point, projection_matrixs[3], T_cam_body[3] * frame->gt.inverse() * T_world_board);
+      cv::circle(frame->ev_1_rectified_, corner, 2, (0, 255, 255), 3);
+    }
+    cv::imshow("test_win", frame->ev_1_rectified_);
+    cv::waitKey(0);
+    for (auto p : frame->rbg_5_marker_.first) {
+      cv::Point3d point;
+      if (rgb_map.find(p) != rgb_map.end()) point = rgb_map[p];
+      // T_cam_body[0] *
+      cv::Point2d corner = Projection(
+          point, projection_matrixs[2], T_cam_body[2] * frame->gt.inverse() * T_world_board);
+      cv::circle(frame->rbg_5_rectified_, corner, 2, (0, 255, 255), 3);
+    }
+    cv::imshow("test_win", frame->rbg_5_rectified_);
     cv::waitKey(0);
   }
   return 0;

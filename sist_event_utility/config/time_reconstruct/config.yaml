@@ -17,8 +17,8 @@ out_imu_topic : '/imu/data'
 # out_lidar_topic : '/os/point_cloud'
 
 
-rawbag_path : '/home/yuxuan/Downloads/joint_calibration2.bag'
-output_path : '/home/yuxuan/Downloads/joint_calibration2_recons.bag'
+rawbag_path : '/home/yuxuan/Downloads/joint_calibration1.bag'
+output_path : '/home/yuxuan/Downloads/joint_calibration1_recons.bag'
 
-gt_path : '/home/yuxuan/Downloads/joint_calibration2.csv'
+gt_path : '/home/yuxuan/Downloads/joint_calibration1.csv'
 out_gt_topic : '/opti/pose'

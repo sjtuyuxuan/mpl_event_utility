@@ -24,23 +24,20 @@ int main(int argc, char* argv[]) {
   if (!(ros::param::get("/rawbag_path", rawbag_path) &&
         ros::param::get("/output_path", output_path)))
     ROS_WARN("Cannot load path");
-  std::string event_left_topic, event_right_topic, rgb_left_topic,
-      rgb_right_topic, imu_topic, kinect_depth_topic, kinect_rgb_topic,
-      lidar_topic;
+  std::string event_left_topic, event_right_topic, rgb_left_topic, rgb_right_topic, imu_topic,
+      kinect_depth_topic, kinect_rgb_topic, lidar_topic;
   ros::param::get("/imu_topic", imu_topic);
-  bool event_left  = ros::param::get("/event_left_topic", event_left_topic);
-  bool event_right = ros::param::get("/event_right_topic", event_right_topic);
-  bool rgb_left    = ros::param::get("/rgb_left_topic", rgb_left_topic);
-  bool rgb_right   = ros::param::get("/rgb_right_topic", rgb_right_topic);
-  bool kinect_depth =
-      ros::param::get("/kinect_depth_topic", kinect_depth_topic);
-  bool kinect_rgb = ros::param::get("/kinect_rgb_topic", kinect_rgb_topic);
-  bool lidar      = ros::param::get("/lidar_topic", lidar_topic);
-  bool gt         = ros::param::get("/gt_path", gt_path);
+  bool event_left   = ros::param::get("/event_left_topic", event_left_topic);
+  bool event_right  = ros::param::get("/event_right_topic", event_right_topic);
+  bool rgb_left     = ros::param::get("/rgb_left_topic", rgb_left_topic);
+  bool rgb_right    = ros::param::get("/rgb_right_topic", rgb_right_topic);
+  bool kinect_depth = ros::param::get("/kinect_depth_topic", kinect_depth_topic);
+  bool kinect_rgb   = ros::param::get("/kinect_rgb_topic", kinect_rgb_topic);
+  bool lidar        = ros::param::get("/lidar_topic", lidar_topic);
+  bool gt           = ros::param::get("/gt_path", gt_path);
 
-  std::string out_event_left_topic, out_event_right_topic, out_rgb_left_topic,
-      out_rgb_right_topic, out_imu_topic, out_kinect_depth_topic,
-      out_kinect_rgb_topic, out_lidar_topic, out_gt_topic;
+  std::string out_event_left_topic, out_event_right_topic, out_rgb_left_topic, out_rgb_right_topic,
+      out_imu_topic, out_kinect_depth_topic, out_kinect_rgb_topic, out_lidar_topic, out_gt_topic;
   ros::param::get("/out_event_left_topic", out_event_left_topic);
   ros::param::get("/out_event_right_topic", out_event_right_topic);
   ros::param::get("/out_rgb_left_topic", out_rgb_left_topic);
@@ -87,15 +84,15 @@ int main(int argc, char* argv[]) {
         std::getline(readstr, data[i], ',');
       }
       gt_buffer.emplace_back(boost::make_shared<geometry_msgs::PoseStamped>());
-      gt_buffer.back()->header.seq   = index;
-      gt_buffer.back()->header.stamp = ros::Time().fromNSec(index * 8333333);
+      gt_buffer.back()->header.seq         = index;
+      gt_buffer.back()->header.stamp       = ros::Time().fromNSec(index * 8333333);
       gt_buffer.back()->pose.orientation.x = atof(data[2].c_str());
       gt_buffer.back()->pose.orientation.y = atof(data[3].c_str());
       gt_buffer.back()->pose.orientation.z = atof(data[4].c_str());
       gt_buffer.back()->pose.orientation.w = atof(data[5].c_str());
       gt_buffer.back()->pose.position.x    = atof(data[6].c_str());
-      gt_buffer.back()->pose.position.x    = atof(data[7].c_str());
-      gt_buffer.back()->pose.position.x    = atof(data[8].c_str());
+      gt_buffer.back()->pose.position.y    = atof(data[7].c_str());
+      gt_buffer.back()->pose.position.z    = atof(data[8].c_str());
       ++index;
     }
     ROS_INFO_STREAM("Lode GT success with frame " << index);
@@ -112,16 +109,13 @@ int main(int argc, char* argv[]) {
   ROS_INFO("Start load bag ...");
   foreach (rosbag::MessageInstance const m, view) {
     if (event_left && m.getTopic() == event_left_topic)
-      event_left_buffer.emplace_back(
-          m.instantiate<sist_event_utility::EventArray>());
+      event_left_buffer.emplace_back(m.instantiate<sist_event_utility::EventArray>());
     if (event_right && m.getTopic() == event_right_topic)
-      event_right_buffer.emplace_back(
-          m.instantiate<sist_event_utility::EventArray>());
+      event_right_buffer.emplace_back(m.instantiate<sist_event_utility::EventArray>());
     if (rgb_left && m.getTopic() == rgb_left_topic) {
       auto s = m.instantiate<sensor_msgs::Image>();
       if (rgb_left_buffer.empty()) {
-        if (rgb_left_last.toNSec() != 0 &&
-            m.getTime().toSec() - rgb_left_last.toSec() < 0.1) {
+        if (rgb_left_last.toNSec() != 0 && m.getTime().toSec() - rgb_left_last.toSec() < 0.1) {
           rgb_left_buffer.emplace_back(rgb_left_temp);
           rgb_left_buffer.emplace_back(s);
         } else {
@@ -135,8 +129,7 @@ int main(int argc, char* argv[]) {
     if (rgb_right && m.getTopic() == rgb_right_topic) {
       auto s = m.instantiate<sensor_msgs::Image>();
       if (rgb_right_buffer.empty()) {
-        if (rgb_right_last.toNSec() != 0 &&
-            m.getTime().toSec() - rgb_right_last.toSec() < 0.1) {
+        if (rgb_right_last.toNSec() != 0 && m.getTime().toSec() - rgb_right_last.toSec() < 0.1) {
           rgb_right_buffer.emplace_back(rgb_right_temp);
           rgb_right_buffer.emplace_back(s);
         } else {
@@ -147,8 +140,7 @@ int main(int argc, char* argv[]) {
       } else
         rgb_right_buffer.emplace_back(s);
     }
-    if (m.getTopic() == imu_topic)
-      imu_buffer.emplace_back(m.instantiate<sensor_msgs::Imu>());
+    if (m.getTopic() == imu_topic) imu_buffer.emplace_back(m.instantiate<sensor_msgs::Imu>());
     if (kinect_depth && m.getTopic() == kinect_depth_topic)
       kinect_buffer.emplace_back(m.instantiate<sensor_msgs::Image>());
     if (kinect_rgb && m.getTopic() == kinect_rgb_topic)
@@ -156,8 +148,7 @@ int main(int argc, char* argv[]) {
     if (lidar && m.getTopic() == lidar_topic) {
       auto s = m.instantiate<sensor_msgs::PointCloud2>();
       if (lidar_buffer.empty()) {
-        if (lidar_last.toNSec() != 0 &&
-            s->header.stamp.toSec() - lidar_last.toSec() < 0.2) {
+        if (lidar_last.toNSec() != 0 && s->header.stamp.toSec() - lidar_last.toSec() < 0.2) {
           lidar_buffer.emplace_back(lidar_temp);
           lidar_buffer.emplace_back(s);
           lidar_start = lidar_temp->header.stamp;
@@ -193,8 +184,7 @@ int main(int argc, char* argv[]) {
           return -1;
         }
         if (i != kinect_buffer.size() - 1) {
-          if (kinect_buffer[i + 1]->header.stamp.toSec() -
-                  kinect_buffer[i]->header.stamp.toSec() <
+          if (kinect_buffer[i + 1]->header.stamp.toSec() - kinect_buffer[i]->header.stamp.toSec() <
               0.015) {
             --lose_frame;
             ROS_WARN("Depth Not Lost");
@@ -203,8 +193,8 @@ int main(int argc, char* argv[]) {
       }
       temp                         = kinect_buffer[i]->header.stamp;
       kinect_buffer[i]->header.seq = kinect_buffer_processed.size();
-      kinect_buffer[i]->header.stamp.fromNSec(
-          (kinect_buffer_processed.size() + lose_frame) * 33333333);
+      kinect_buffer[i]->header.stamp.fromNSec((kinect_buffer_processed.size() + lose_frame) *
+                                              33333333);
       kinect_buffer_processed.emplace_back(kinect_buffer[i]);
     }
     kinect_buffer.clear();
@@ -253,18 +243,21 @@ int main(int argc, char* argv[]) {
   ros::Time start_time = imu_buffer.front()->header.stamp;
 
   // avoid inverse
-  ros::Time left_time, right_time;
+  bool left_dense      = false;
+  bool right_dense     = false;
+  int64_t left_offset  = 0;
+  int64_t right_offset = 0;
+  ros::Time left_time, right_time, left_time_final, right_time_final;
   left_time.fromNSec(0);
   right_time.fromNSec(0);
+  left_time_final.fromNSec(0);
+  right_time_final.fromNSec(0);
   int count = 0;
 
   std::vector<u_int64_t> time_now;
-  time_now.emplace_back(event_left ?
-                            event_left_buffer.front()->header.stamp.toNSec() :
-                            UINT64_MAX);
-  time_now.emplace_back(event_right ?
-                            event_right_buffer.front()->header.stamp.toNSec() :
-                            UINT64_MAX);
+  time_now.emplace_back(event_left ? event_left_buffer.front()->header.stamp.toNSec() : UINT64_MAX);
+  time_now.emplace_back(event_right ? event_right_buffer.front()->header.stamp.toNSec() :
+                                      UINT64_MAX);
   time_now.emplace_back(rgb_left ? 0 : UINT64_MAX);
   time_now.emplace_back(rgb_right ? 0 : UINT64_MAX);
   time_now.emplace_back(0);
@@ -278,17 +271,39 @@ int main(int argc, char* argv[]) {
     switch (static_cast<int>(std::distance(time_now.begin(), early))) {
       case 0:
         for (auto&& event : event_left_buffer.front()->events) {
-          if (event.ts.toNSec() >= left_time.toNSec()) {
-            left_time = event.ts;
-          } else {
-            event.ts = left_time;
-            ROS_DEBUG("!!! INVERSE !!! %d", ++count);
+          if (left_dense) {
+            if (event.ts.toNSec() >= left_time.toNSec() + 4900000 &&
+                event.ts.toNSec() < left_time.toNSec() + 5100000) {
+              left_offset -= 5000000;
+              ROS_WARN_STREAM("!!! Two trigger received !!! and offset is: " << left_offset
+                                                                             << "ns");
+            } else if (event.ts.toNSec() > left_time.toNSec() + 5100000) {
+              ROS_ERROR_STREAM("!!! More than two trigger received !!! ERROR!");
+            }
+            if (left_time.toNSec() >= event.ts.toNSec() + 4900000 &&
+                left_time.toNSec() < event.ts.toNSec() + 5100000) {
+              left_offset += 5000000;
+              ROS_WARN_STREAM("!!! No trigger received in 5ms point !!! and offset is: "
+                              << left_offset << "ns");
+            } else if (left_time.toNSec() > event.ts.toNSec() + 5100000) {
+              ROS_ERROR_STREAM("!!! More reverse!!! ERROR!");
+            }
           }
-          event.ts.fromNSec(event.ts.toNSec() + start_time.toNSec());
+          left_time = event.ts;
+          event.ts.fromNSec(event.ts.toNSec() + start_time.toNSec() + left_offset);
+          if (event.ts < left_time_final) {
+            ROS_ERROR_STREAM("!!! Small reverse!!! in"
+                             << left_time_final.toNSec() - event.ts.toNSec() << "ns");
+            event.ts = left_time_final;
+          }
+          if (event.ts.toNSec() < left_time_final.toNSec() + 100000)
+            left_dense = true;
+          else
+            left_dense = false;
+          left_time_final = event.ts;
         }
         event_left_buffer.front()->header.stamp.fromNSec(
-            event_left_buffer.front()->header.stamp.toNSec() +
-            start_time.toNSec());
+            event_left_buffer.front()->events.front().ts.toNSec());
         bag_out.write(out_event_left_topic,
                       event_left_buffer.front()->header.stamp,
                       event_left_buffer.front());
@@ -301,17 +316,39 @@ int main(int argc, char* argv[]) {
         break;
       case 1:
         for (auto&& event : event_right_buffer.front()->events) {
-          if (event.ts.toNSec() >= right_time.toNSec()) {
-            right_time = event.ts;
-          } else {
-            event.ts = right_time;
-            ROS_DEBUG("!!! INVERSE !!! %d", ++count);
+          if (right_dense) {
+            if (event.ts.toNSec() >= right_time.toNSec() + 4900000 &&
+                event.ts.toNSec() < right_time.toNSec() + 5100000) {
+              right_offset -= 5000000;
+              ROS_WARN_STREAM("!!! Two trigger received !!! and offset is: " << right_offset
+                                                                             << "ns");
+            } else if (event.ts.toNSec() > right_time.toNSec() + 5100000) {
+              ROS_ERROR_STREAM("!!! More than two trigger received !!! ERROR!");
+            }
+            if (right_time.toNSec() >= event.ts.toNSec() + 4900000 &&
+                right_time.toNSec() < event.ts.toNSec() + 5100000) {
+              right_offset += 5000000;
+              ROS_WARN_STREAM("!!! No trigger received in 5ms point !!! and offset is: "
+                              << right_offset << "ns");
+            } else if (right_time.toNSec() > event.ts.toNSec() + 5100000) {
+              ROS_ERROR_STREAM("!!! More reverse!!! ERROR!");
+            }
           }
-          event.ts.fromNSec(event.ts.toNSec() + start_time.toNSec());
+          right_time = event.ts;
+          event.ts.fromNSec(event.ts.toNSec() + start_time.toNSec() + right_offset);
+          if (event.ts < right_time_final) {
+            ROS_ERROR_STREAM("!!! Small reverse!!! in"
+                             << right_time_final.toNSec() - event.ts.toNSec() << "ns");
+            event.ts = right_time_final;
+          }
+          if (event.ts.toNSec() < right_time_final.toNSec() + 100000)
+            right_dense = true;
+          else
+            right_dense = false;
+          right_time_final = event.ts;
         }
         event_right_buffer.front()->header.stamp.fromNSec(
-            event_right_buffer.front()->header.stamp.toNSec() +
-            start_time.toNSec());
+            event_right_buffer.front()->events.front().ts.toNSec());
         bag_out.write(out_event_right_topic,
                       event_right_buffer.front()->header.stamp,
                       event_right_buffer.front());
@@ -324,11 +361,9 @@ int main(int argc, char* argv[]) {
         break;
       case 2:
         if (!rgb_left_buffer.empty()) {
-          rgb_left_buffer.front()->header.stamp.fromNSec(time_now[2] +
-                                                         start_time.toNSec());
-          bag_out.write(out_rgb_left_topic,
-                        rgb_left_buffer.front()->header.stamp,
-                        rgb_left_buffer.front());
+          rgb_left_buffer.front()->header.stamp.fromNSec(time_now[2] + start_time.toNSec());
+          bag_out.write(
+              out_rgb_left_topic, rgb_left_buffer.front()->header.stamp, rgb_left_buffer.front());
           time_now[2] += 33333333;
           rgb_left_buffer.pop_front();
         } else {
@@ -337,8 +372,7 @@ int main(int argc, char* argv[]) {
         break;
       case 3:
         if (!rgb_right_buffer.empty()) {
-          rgb_right_buffer.front()->header.stamp.fromNSec(time_now[3] +
-                                                          start_time.toNSec());
+          rgb_right_buffer.front()->header.stamp.fromNSec(time_now[3] + start_time.toNSec());
           bag_out.write(out_rgb_right_topic,
                         rgb_right_buffer.front()->header.stamp,
                         rgb_right_buffer.front());
@@ -350,11 +384,8 @@ int main(int argc, char* argv[]) {
         break;
       case 4:
         if (!imu_buffer.empty()) {
-          imu_buffer.front()->header.stamp.fromNSec(time_now[4] +
-                                                    start_time.toNSec());
-          bag_out.write(out_imu_topic,
-                        imu_buffer.front()->header.stamp,
-                        imu_buffer.front());
+          imu_buffer.front()->header.stamp.fromNSec(time_now[4] + start_time.toNSec());
+          bag_out.write(out_imu_topic, imu_buffer.front()->header.stamp, imu_buffer.front());
           time_now[4] += 5000000;
           imu_buffer.pop_front();
         } else {
@@ -363,11 +394,9 @@ int main(int argc, char* argv[]) {
         break;
       case 5:
         if (!kinect_buffer_processed.empty()) {
-          time_now[5] =
-              kinect_buffer_processed.front()->header.stamp.toNSec() + 33333333;
+          time_now[5] = kinect_buffer_processed.front()->header.stamp.toNSec() + 33333333;
           kinect_buffer_processed.front()->header.stamp.fromNSec(
-              kinect_buffer_processed.front()->header.stamp.toNSec() +
-              start_time.toNSec());
+              kinect_buffer_processed.front()->header.stamp.toNSec() + start_time.toNSec());
           bag_out.write(out_kinect_depth_topic,
                         kinect_buffer_processed.front()->header.stamp,
                         kinect_buffer_processed.front());
@@ -378,14 +407,11 @@ int main(int argc, char* argv[]) {
         break;
       case 6:
         if (!lidar_buffer.empty()) {
-          lidar_buffer.front()->header.stamp.fromNSec(
-              lidar_buffer.front()->header.stamp.toNSec() -
-              lidar_start.toNSec() + start_time.toNSec());
-          bag_out.write(out_lidar_topic,
-                        lidar_buffer.front()->header.stamp,
-                        lidar_buffer.front());
-          time_now[6] = lidar_buffer.front()->header.stamp.toNSec() +
-                        100000000 - start_time.toNSec();
+          lidar_buffer.front()->header.stamp.fromNSec(lidar_buffer.front()->header.stamp.toNSec() -
+                                                      lidar_start.toNSec() + start_time.toNSec());
+          bag_out.write(out_lidar_topic, lidar_buffer.front()->header.stamp, lidar_buffer.front());
+          time_now[6] =
+              lidar_buffer.front()->header.stamp.toNSec() + 100000000 - start_time.toNSec();
           lidar_buffer.pop_front();
         } else {
           time_now[6] = UINT64_MAX;
@@ -393,12 +419,9 @@ int main(int argc, char* argv[]) {
         break;
       case 7:
         if (!kinect_buffer_rgb_processed.empty()) {
-          time_now[7] =
-              kinect_buffer_rgb_processed.front()->header.stamp.toNSec() +
-              33333333;
+          time_now[7] = kinect_buffer_rgb_processed.front()->header.stamp.toNSec() + 33333333;
           kinect_buffer_rgb_processed.front()->header.stamp.fromNSec(
-              kinect_buffer_rgb_processed.front()->header.stamp.toNSec() +
-              start_time.toNSec());
+              kinect_buffer_rgb_processed.front()->header.stamp.toNSec() + start_time.toNSec());
           bag_out.write(out_kinect_rgb_topic,
                         kinect_buffer_rgb_processed.front()->header.stamp,
                         kinect_buffer_rgb_processed.front());
@@ -410,10 +433,9 @@ int main(int argc, char* argv[]) {
       case 8:
         if (!gt_buffer.empty()) {
           time_now[8] = gt_buffer.front()->header.stamp.toNSec() + 8333333;
-          gt_buffer.front()->header.stamp.fromNSec(
-              gt_buffer.front()->header.stamp.toNSec() + start_time.toNSec());
-          bag_out.write(
-              out_gt_topic, gt_buffer.front()->header.stamp, gt_buffer.front());
+          gt_buffer.front()->header.stamp.fromNSec(gt_buffer.front()->header.stamp.toNSec() +
+                                                   start_time.toNSec());
+          bag_out.write(out_gt_topic, gt_buffer.front()->header.stamp, gt_buffer.front());
           gt_buffer.pop_front();
         } else {
           time_now[8] = UINT64_MAX;
